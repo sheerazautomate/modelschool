@@ -99,6 +99,52 @@ all 638 class-days, plus the summary, attendance, improvement and rubric sheets.
 Links are defined once in `js/sync.js` (`LINKS`). The console builds the workbook
 from live state and downloads it; the sheet is refreshed by importing that file.
 
+## Deploying it
+
+The app is a static site: plain HTML, CSS and ES modules, no build step and no
+server code. Anything that serves files over HTTPS will host it.
+
+### GitHub Pages (free, ~2 minutes)
+
+1. Merge this branch into `main` (Pages publishes from `main`).
+2. Repo → **Settings → Pages** → Source **Deploy from a branch** → `main`, folder `/ (root)` → **Save**.
+3. It appears at `https://sheerazautomate.github.io/modelschool/` in a minute or two.
+
+The `.nojekyll` file in the repo root stops Jekyll from touching the files. The
+`archive/` folder is published too, so the exported CSVs and the two HTML reports
+get a public URL — fine while the data is the sample month, worth removing before
+real staff data goes in.
+
+### Netlify / Cloudflare Pages (drag and drop)
+
+Drop the repo folder on Netlify, or connect the repo and leave the build command
+empty with publish directory `.`. `netlify.toml` sets the JavaScript MIME type and
+no-sniff headers. Cloudflare Pages needs the same: no build command, output `/`.
+
+### School server or a laptop on the LAN
+
+```bash
+python3 -m http.server 8080 --bind 0.0.0.0
+```
+
+Then open `http://<machine-ip>:8080` from any device on the school network. This
+is the version that works with no internet at all — the console needs nothing
+external except the two Drive/Sheets links, which are only opened when clicked.
+
+### Before real data goes on a public URL
+
+The console keeps its state in the browser's `localStorage`. That means each
+browser and each device is its own copy: marks entered on the principal's laptop
+do not appear on the clerk's desktop, and they disappear if the browser profile is
+cleared. For one person marking on one machine that is enough. For shared use,
+either keep it on the LAN behind the school router, or set a password on the
+hosting (Netlify Identity, Cloudflare Access) so only staff can open it — a public
+URL with no password means anyone with the link can read every teacher's marks.
+
+The Drive and Sheets integration is deliberately one-way: the console builds the
+file, you upload it. It never holds Google credentials, so it cannot post on its
+own and cannot leak them.
+
 ## Layout
 
 ```
