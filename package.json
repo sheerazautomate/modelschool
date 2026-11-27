@@ -5,7 +5,7 @@
   "scripts": {
     "start": "python3 -m http.server 5173 --bind 0.0.0.0",
     "bundle": "esbuild js/app.js --bundle --format=iife --outfile=.tests/bundle.js",
-    "test": "node .tests/checkall.mjs"
+    "test": "npm run bundle --silent && node .tests/checkall.mjs && node .tests/sync.mjs && node .tests/bridge.mjs && node .tests/connect-ui.mjs && node .tests/entry-sync.mjs"
   },
   "private": true,
   "type": "module",

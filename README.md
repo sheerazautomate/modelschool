@@ -93,11 +93,69 @@ all 638 class-days, plus the summary, attendance, improvement and rubric sheets.
 
 ## Google Workspace
 
+The workbook *is* the storage, not an export target.
+
 - **Workbook:** [GBMHS Layyah — Monitoring Workbook (Oct 2026)](https://docs.google.com/spreadsheets/d/1jqDC2AqgoCmKjdgOg4MGJomjmR1upXKahRgGPWQXrkw/edit)
 - **Archive folder:** [School Monitoring — GBMHS Layyah](https://drive.google.com/drive/folders/1scGOXrHtu7aC255lcaX-YfeIYySxPQBT)
 
-Links are defined once in `js/sync.js` (`LINKS`). The console builds the workbook
-from live state and downloads it; the sheet is refreshed by importing that file.
+### How it works
+
+The console talks to the workbook through a small Apps Script deployed inside
+it (`apps-script/Code.gs`). Setup is one 15-minute session, documented in
+[`apps-script/README.md`](apps-script/README.md). No Google Cloud project, no
+client ID, no consent screen — the script runs as the school account that
+deployed it and uses that account's own permissions.
+
+```
+principal's browser                     Google account
+───────────────────                     ──────────────
+  mark a cell
+      │ local save (instant)
+      │ queue the change
+      ▼
+  POST ── text/plain, no preflight ──▶  Apps Script  ──▶  Sync log tab (append only)
+                                              │
+  GET  ◀── JSONP, changes since cursor ───────┘
+      │
+      ▼
+  merge by timestamp → re-render
+```
+
+Two channels, because a browser cannot read a cross-origin response from Apps
+Script without a preflight the deployment does not answer. Writes go out blind
+with a safelisted content type; reads come back as JSONP. A write counts as
+delivered only when a later read shows its id in the log, so a dropped request
+stays queued and is retried — and the log de-duplicates by id, so retrying can
+never double-count a mark.
+
+### The record
+
+| Tab | Written by | Purpose |
+|---|---|---|
+| `Sync log` | every edit | Append-only list of changes: what changed, when, by which device |
+| `Settings` | setup | Log version counter |
+| `Summary`, `Teachers`, `Daily checklist`, `Attendance register`, `Improvement register`, `Rubric` | *Write workbook tabs* | The same six tables the principal sees on screen |
+
+Every formula lives in `js/scoring.js`. The script stores and displays; it never
+computes a score. So the number in the sheet and the number on screen cannot
+drift apart.
+
+### Conflicts, clocks and offline
+
+- Every change carries a timestamp; the newest timestamp for a cell wins and
+  nothing else is touched.
+- The clock is corrected against the server on each read, so a device with a
+  wrong clock cannot overwrite newer work.
+- Marks save locally first, so marking never stalls. Offline, changes queue and
+  send when the connection returns.
+- If the log is emptied by hand, the console notices its cursor is past the end,
+  replays from the first row, and records that it replayed.
+
+### Keeping it private
+
+The token in Script Properties is what protects the record, not the Google
+sign-in — see *Keeping it closed* in `apps-script/README.md` for the stricter
+arrangement if "Anyone" is not acceptable.
 
 ## Deploying it
 
@@ -133,17 +191,20 @@ external except the two Drive/Sheets links, which are only opened when clicked.
 
 ### Before real data goes on a public URL
 
-The console keeps its state in the browser's `localStorage`. That means each
-browser and each device is its own copy: marks entered on the principal's laptop
-do not appear on the clerk's desktop, and they disappear if the browser profile is
-cleared. For one person marking on one machine that is enough. For shared use,
-either keep it on the LAN behind the school router, or set a password on the
-hosting (Netlify Identity, Cloudflare Access) so only staff can open it — a public
-URL with no password means anyone with the link can read every teacher's marks.
+Once the workbook is connected, marks live in the school's Google account and any
+device that signs in with the same URL and token reads them. `localStorage` is
+then a working copy, not the record.
 
-The Drive and Sheets integration is deliberately one-way: the console builds the
-file, you upload it. It never holds Google credentials, so it cannot post on its
-own and cannot leak them.
+On a *public* URL, though, anyone with the link can open the console and see
+every teacher's marks — and, if the token is stored in their browser, write to
+the sheet. So either keep the console on the school LAN, or put a password in
+front of it (Netlify Identity, Cloudflare Access, or Google sign-in on an
+organisational deployment of the script). The token protects the endpoint; the
+hosting password protects the console.
+
+The console itself never holds Google credentials. The script runs inside the
+workbook with your own account's permissions, and the console only knows the
+deployment URL and the token you created.
 
 ## Layout
 
@@ -154,17 +215,22 @@ js/data.js            school, rubric, 29 teachers, 22 working days, page-3 regis
 js/scoring.js         rubric → pillars → composite → grade, trends, risk flags
 js/narrative.js       the explanation engine and improvement plans
 js/store.js           state, persistence, demo-data generator, import/export
+js/ops.js             change records: queue, apply, timestamps, merge rules
+js/bridge.js          transport to Apps Script, delivery confirmation, clock skew
 js/charts.js          SVG line, bar, donut, scatter, radar, heatmap
 js/report.js          the six printable documents
 js/sync.js            Google Sheets/Drive bridge and workbook definition
 js/views/*.js         one file per screen
+apps-script/Code.gs   the endpoint deployed inside the workbook
 archive/              exported CSVs and HTML documents sent to Drive
 ```
 
 ## Known limits
 
-- The console cannot hold Google credentials, so the Sheets link is a published
-  workbook rather than a live two-way sync. Refreshing it is a file import.
+- Sync needs a one-time Apps Script setup in the workbook. Until it is done the
+  console is fully usable but stores only in the browser.
+- The chargeable tabs are rewritten only when *Write workbook tabs* is pressed;
+  the change log always updates. Running it once a day is enough.
 - Enrolments for 9th-B and 9th-D are estimates (page 3 does not list those classes).
 - Attendance percentages are derived from the checklist's bands (below 80% → 72,
   80%+ → 84, 90%+ → 92). They index compliance; they are not the class register.

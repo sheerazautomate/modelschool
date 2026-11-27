@@ -11,6 +11,8 @@ import {
 import { computeSchool, computeTeacher, gradeFor, statusTone } from './scoring.js';
 import { $, $$, el, toast, downloadFile, fmtDateLong } from './util.js';
 import { icon, iconEl } from './icons.js';
+import { ensure as ensureSync, seedStamps, newOp, pending } from './ops.js';
+import * as bridge from './bridge.js';
 
 import { renderDashboard } from './views/dashboard.js';
 import { renderRegister } from './views/register.js';
@@ -21,6 +23,7 @@ import { renderReports } from './views/reports.js';
 import { renderData } from './views/data.js';
 import { openTeacherDrawer, closeTeacherDrawer } from './views/teacher.js';
 import { printCurrentReport } from './views/reports.js';
+import { workbook } from './sync.js';
 
 const VIEWS = {
   dashboard: { label: 'Overview', icon: 'dashboard', group: 'Monitor', render: renderDashboard },
@@ -52,8 +55,71 @@ export const App = {
       this.mode = 'demo';
       save(this.state);
     }
+    ensureSync(this.state);
+    seedStamps(this.state);
+    bridge.loadSettings();
     this.recompute();
     this.mount();
+    this.startSync();
+  },
+
+  /* --- sync ----------------------------------------------------------- */
+
+  /* Queue a change for the sheet. Local save happens immediately either way,
+     so marking never waits for the network. */
+  track(op) {
+    bridge.queue(this.state, op);
+    this.updateSyncChip();
+    if (bridge.isConnected()) bridge.schedule(this);
+    return op;
+  },
+
+  startSync() {
+    bridge.subscribe(() => this.updateSyncChip());
+    this.updateSyncChip();
+    if (!bridge.isConnected()) return;
+    this.syncNow({ quiet: true });
+    clearInterval(this._syncTimer);
+    this._syncTimer = setInterval(() => {
+      if (!bridge.isConnected()) return;
+      if (pending(this.state)) bridge.push(this).catch(() => {});
+      else this.syncNow({ quiet: true, push: false }).catch(() => {});
+    }, 60000);
+    window.addEventListener('online', () => this.syncNow({ quiet: true }).catch(() => {}));
+  },
+
+  /* One round trip: send what is queued, then read what others sent. */
+  async syncNow({ quiet = true, push = true } = {}) {
+    if (!bridge.isConnected()) return { skipped: true };
+    try {
+      if (push && pending(this.state)) await bridge.push(this, { quiet });
+      const res = await bridge.pull(this, { apply: true });
+      if (res.changed) {
+        this.recompute();
+        save(this.state);
+        this.render();
+        toast(`Updated from the sheet — ${res.changed} change${res.changed === 1 ? '' : 's'}.`);
+      }
+      this.updateSyncChip();
+      return res;
+    } catch (err) {
+      if (!quiet) toast(err.message, 'error');
+      this.updateSyncChip();
+      return { error: err.message };
+    }
+  },
+
+  /* Send the readable tabs along with the next push, so the spreadsheet shows
+     the same tables the principal sees. */
+  async pushWorkbook() {
+    if (!bridge.isConnected()) { toast('Connect the sheet first.', 'error'); return; }
+    const tabs = workbook(this);
+    try {
+      await bridge.push(this, { tabs, quiet: false });
+      toast('Workbook written to the sheet.');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   },
 
   recompute() {
@@ -87,22 +153,41 @@ export const App = {
   /* Marking must never rebuild the screen the principal is working in —
      only the numbers that depend on the mark are refreshed by the caller. */
   setMark(teacherId, day, itemKey, value) {
+    const ts = bridge.now(this.state);
     setMark(this.state, teacherId, day, itemKey, value);
+    ensureSync(this.state).stamps.marks[`${teacherId}|${day}|${itemKey}`] = ts;
     this.commit({ rerender: false });
+    this.track(newOp('mark', { teacherId, day, itemKey, value: value === '' ? null : Number(value) }, ts));
   },
 
   setRemark(teacherId, text) {
+    const ts = bridge.now(this.state);
     setObservation(this.state, teacherId, text);
+    ensureSync(this.state).stamps.obs[teacherId] = ts;
     this.commit();
+    this.track(newOp('remark', { teacherId, text }, ts));
     toast('Official remark recorded.');
   },
 
   newAction(action) {
+    const ts = bridge.now(this.state);
     addAction(this.state, action);
     this.commit();
+    this.track(newOp('action.add', { action }, ts));
   },
-  toggleAction(id) { toggleActionDone(this.state, id); this.commit(); },
-  deleteAction(id) { removeAction(this.state, id); this.commit(); },
+  toggleAction(id) {
+    const ts = bridge.now(this.state);
+    toggleActionDone(this.state, id);
+    const a = (this.state.actions || []).find((x) => x.id === id);
+    this.commit();
+    this.track(newOp('action.done', { actionId: id, done: a ? !!a.done : null }, ts));
+  },
+  deleteAction(id) {
+    const ts = bridge.now(this.state);
+    removeAction(this.state, id);
+    this.commit();
+    this.track(newOp('action.del', { actionId: id }, ts));
+  },
 
   setMode(mode) {
     if (mode === 'demo') {
@@ -115,6 +200,7 @@ export const App = {
     }
     this.mode = mode;
     this.state.mode = mode;
+    ensureSync(this.state).stamps = { marks: {}, obs: {}, actions: {}, notes: {} };
     this.commit();
     toast(mode === 'demo' ? 'Sample dataset loaded.' : 'Cleared — ready for live entry.');
   },
@@ -131,6 +217,8 @@ export const App = {
       const data = normalizeImport(JSON.parse(text));
       this.state = data;
       this.mode = data.mode === 'demo' ? 'demo' : 'live';
+      ensureSync(this.state);
+      seedStamps(this.state);
       this.commit();
       toast('Backup restored.');
     } catch (err) {
@@ -182,7 +270,12 @@ export const App = {
     );
     const modeChip = el('span', { class: `chip-mode ${this.mode}`, id: 'mode-chip' },
       el('span', { class: 'dot' }), this.mode === 'demo' ? 'Sample data' : 'Live data');
+    const syncChip = el('button', {
+      class: 'chip-sync off', id: 'sync-chip', title: 'Google Sheets sync',
+      onclick: () => this.navigate('data'),
+    }, el('span', { class: 'dot' }), el('span', { id: 'sync-text' }, 'Sheet: off'));
     const btns = el('div', { class: 'mh-actions' },
+      syncChip,
       el('button', {
         class: 'btn btn-sm',
         title: 'Print the monthly school report for this period',
@@ -247,12 +340,30 @@ export const App = {
         el('div', { class: 'big' }, 'Something went wrong rendering this view'),
         el('div', { class: 'note' }, String(err.message || err))));
     }
+    this.updateSyncChip();
     const chip = $('#mode-chip');
     if (chip) {
       chip.className = `chip-mode ${this.mode}`;
       chip.innerHTML = '';
       chip.append(el('span', { class: 'dot' }), this.mode === 'demo' ? 'Sample data' : 'Live data');
     }
+  },
+
+  updateSyncChip() {
+    const chip = document.getElementById('sync-chip');
+    const text = document.getElementById('sync-text');
+    if (!chip || !text) return;
+    const st = bridge.status;
+    const queued = pending(this.state);
+    const labels = {
+      off: 'Sheet: off',
+      idle: queued ? `Sheet: ${queued} queued` : 'Sheet: synced',
+      syncing: 'Sheet: syncing…',
+      error: 'Sheet: error',
+    };
+    chip.className = `chip-sync ${st.state}${queued && st.state === 'idle' ? ' queued' : ''}`;
+    text.textContent = labels[st.state] || 'Sheet: off';
+    chip.title = `${st.message}${st.lastPull ? ` · last read ${new Date(st.lastPull).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : ''}`;
   },
 
   openTeacher(id, tab = 'overview') {
