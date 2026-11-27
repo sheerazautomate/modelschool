@@ -1,0 +1,16 @@
+# Netlify / Cloudflare Pages style config. The site is fully static.
+[build]
+  publish = "."
+
+# ES modules must be served with a JavaScript MIME type and revalidated.
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Content-Type = "text/javascript; charset=utf-8"
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
