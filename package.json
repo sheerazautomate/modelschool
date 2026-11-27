@@ -1,0 +1,18 @@
+{
+  "name": "gbmhs-layyah-monitoring",
+  "version": "1.0.0",
+  "description": "Attendance tracking and teacher performance console for the Principal, Govt. Boys Model High School, Layyah",
+  "scripts": {
+    "start": "python3 -m http.server 5173 --bind 0.0.0.0",
+    "bundle": "esbuild js/app.js --bundle --format=iife --outfile=.tests/bundle.js",
+    "test": "node .tests/checkall.mjs"
+  },
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@sparticuz/chromium": "^158.0.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^31.0.1",
+    "puppeteer-core": "^25.19.0"
+  }
+}
