@@ -3,8 +3,9 @@
    ========================================================================= */
 
 import {
-  ITEMS, SEED_TEACHERS, WORKING_DAYS, SCHOOL,
+  ITEMS, SEED_TEACHERS, SCHOOL,
 } from './data.js';
+import { buildPeriod, ensurePeriod, monthKey } from './period.js';
 import { rng, hashString, noise, clamp, round } from './util.js';
 
 const KEY = 'gbmhs-layyah-monitor-v1';
@@ -29,10 +30,11 @@ export function uid() {
   return `t${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function blankState() {
+export function blankState(periodKey = monthKey()) {
   return {
     schema: SCHEMA,
     mode: 'blank',
+    period: buildPeriod(periodKey),
     updatedAt: new Date().toISOString(),
     teachers: SEED_TEACHERS.map((t) => ({ ...t, id: `t${String(t.sr).padStart(2, '0')}` })),
     entries: {},
@@ -67,9 +69,9 @@ const ITEM_TUNING = {
   social_media: { gap: 0.07 },
 };
 
-function rawForItem(item, profile, r, dayIndex, profileCfg) {
+function rawForItem(item, profile, r, dayIndex, profileCfg, dayCount) {
   if (r() < profileCfg.dayDropout) return 0;
-  const progress = dayIndex / (WORKING_DAYS.length - 1);
+  const progress = dayIndex / Math.max(1, dayCount - 1);
   const drift = -profileCfg.lateMonthDip * progress;
   const gap = ITEM_TUNING[item.key]?.gap ?? 0.08;
   const quality = profileCfg.target + noise(r, profileCfg.spread) + drift;
@@ -97,21 +99,23 @@ function scaledPoints(item, p, r) {
 
 export function generateDemo(state = blankState()) {
   const next = { ...state, mode: 'demo', entries: {}, observations: {}, notes: {} };
+  next.period = ensurePeriod(next, state?.period?.key || monthKey());
   next.teachers = SEED_TEACHERS.map((t) => ({ ...t, id: `t${String(t.sr).padStart(2, '0')}` }));
 
+  const days = next.period.days;
   for (const teacher of next.teachers) {
     const cfg = PROFILES[teacher.profile] || PROFILES.average;
     const r = rng(hashString(teacher.name) ^ 0x9e3779b9);
     next.entries[teacher.id] = {};
     let leaveUsed = 0;
-    WORKING_DAYS.forEach((day, di) => {
+    days.forEach((day, di) => {
       const marks = {};
       for (const item of ITEMS) {
         if (item.key === 'leave') {
           // month-level item: no leave = 2, one = 1, two or more = 0
           continue;
         }
-        const p = rawForItem(item, teacher.profile, r, di, cfg);
+        const p = rawForItem(item, teacher.profile, r, di, cfg, days.length);
         marks[item.key] = scaledPoints(item, p, r);
       }
       // leave decided once, then repeated for the month
@@ -120,7 +124,7 @@ export function generateDemo(state = blankState()) {
       next.entries[teacher.id][day] = marks;
     });
 
-    next.observations[teacher.id] = demoObservation(teacher, cfg, r);
+    next.observations[teacher.id] = demoObservation(teacher, cfg, r, days);
   }
   next.updatedAt = new Date().toISOString();
   return next;
@@ -144,12 +148,12 @@ const REMARKS_SAMPLE = {
   ],
 };
 
-function demoObservation(teacher, cfg, r) {
+function demoObservation(teacher, cfg, r, days = []) {
   const bank = REMARKS_SAMPLE[teacher.profile] || REMARKS_SAMPLE.average;
   const remark = bank[Math.floor(r() * bank.length)];
   return {
     remark,
-    notedOn: WORKING_DAYS[WORKING_DAYS.length - 1],
+    notedOn: days.slice(-1)[0] || new Date().toISOString().slice(0, 10),
     by: SCHOOL.principal,
   };
 }
@@ -233,7 +237,7 @@ export function exportState(state) {
 export function normalizeImport(data) {
   if (!data || typeof data !== 'object') throw new Error('File is not a monitoring backup.');
   if (!Array.isArray(data.teachers)) throw new Error('Backup has no teacher list.');
-  const base = blankState();
+  const base = blankState(data?.period?.key || monthKey());
   const teachers = data.teachers.map((t, i) => ({
     ...t,
     id: t.id || `t${String(i + 1).padStart(2, '0')}`,
@@ -243,6 +247,7 @@ export function normalizeImport(data) {
     ...base,
     ...data,
     schema: SCHEMA,
+    period: ensurePeriod({ ...data }, data?.period?.key || monthKey()),
     teachers,
     entries: data.entries || {},
     observations: data.observations || {},

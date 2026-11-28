@@ -1,6 +1,6 @@
 /* Improvement Plans — the school action register. */
 
-import { SCHOOL, WORKING_DAYS } from '../data.js';
+import { SCHOOL } from '../data.js';
 import { el, fmtDate, plural, round } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import { viewHead, card, emptyState } from '../components.js';

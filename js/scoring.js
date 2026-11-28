@@ -10,8 +10,8 @@
 
 import {
   ITEMS, ITEM_BY_KEY, PILLARS, PILLAR_ITEMS, PILLAR_MAX, MAX_TOTAL,
-  WORKING_DAYS, WEEKS,
 } from './data.js';
+import { weeksOf } from './period.js';
 import { clamp, round, sum, avg } from './util.js';
 
 export const GRADES = [
@@ -43,7 +43,11 @@ export const dayFilledCount = (store, teacherId, day) =>
 export const isDayComplete = (store, teacherId, day) => dayFilledCount(store, teacherId, day) === ITEMS.length;
 
 /* --- one teacher's aggregate ------------------------------------------- */
-export function computeTeacher(teacher, store, days = WORKING_DAYS) {
+/* `days` is the period being reported on — supplied by the caller from the
+   state, never a constant. A teacher is measured against the days the school
+   actually worked in that month, which is why this cannot be hardcoded. */
+export function computeTeacher(teacher, store, days) {
+  if (!days || !days.length) days = [];
   const rows = [];
   const itemStats = {};
   for (const item of ITEMS) itemStats[item.key] = { earned: 0, possible: 0, zeros: 0, days: 0 };
@@ -116,7 +120,8 @@ export function computeTeacher(teacher, store, days = WORKING_DAYS) {
     teacher,
     daysObserved: rows.length,
     daysComplete: rows.filter((r) => r.complete).length,
-    coverage: (rows.length / WORKING_DAYS.length) * 100,
+    coverage: days.length ? (rows.length / days.length) * 100 : 0,
+    periodDays: days.length,
     rows,
     itemStats,
     pillars,
@@ -141,7 +146,7 @@ export function bandToPct(pts) {
   return { 0: 72, 1: 84, 2: 92 }[pts] ?? null;
 }
 
-export function getStudentAttendance(teacher, store, days = WORKING_DAYS) {
+export function getStudentAttendance(teacher, store, days = []) {
   const vals = [];
   for (const day of days) {
     const v = getMark(store, teacher.id, day, 'attendance');
@@ -150,9 +155,11 @@ export function getStudentAttendance(teacher, store, days = WORKING_DAYS) {
   return vals.length ? avg(vals) : 0;
 }
 
-/* Weekly student attendance from week blocks, for the register tab */
-export function weeklyAttendance(teacher, store) {
-  return WEEKS.map((w) => {
+/* Weekly student attendance from week blocks, for the register tab.
+   The weeks are derived from the period's days, so they follow the calendar
+   rather than the fixed October layout. */
+export function weeklyAttendance(teacher, store, days = []) {
+  return weeksOf(days).map((w) => {
     const vals = w.days.map((d) => getMark(store, teacher.id, d, 'attendance')).filter((v) => v !== null);
     return {
       key: w.key, label: w.label, range: w.range,
@@ -225,7 +232,7 @@ export function riskFlags(record, store) {
   if (record.composite < 60) flags.push({ level: 'red', text: `Composite ${record.composite}% — below the 60% school floor.` });
   else if (record.composite < 70) flags.push({ level: 'amber', text: `Composite ${record.composite}% — between 60% and 70%.` });
 
-  if (record.coverage < 60) flags.push({ level: 'amber', text: `Checklist only filled on ${record.daysObserved} of ${WORKING_DAYS.length} working days.` });
+  if (record.coverage < 60) flags.push({ level: 'amber', text: `Checklist only filled on ${record.daysObserved} of ${record.periodDays} working days.` });
 
   for (const w of record.weakest.slice(0, 3)) {
     if (w.percent <= 40 && w.days >= 3) {
@@ -240,7 +247,7 @@ export function riskFlags(record, store) {
 }
 
 /* --- school-wide ------------------------------------------------------- */
-export function computeSchool(teachers, store, days = WORKING_DAYS) {
+export function computeSchool(teachers, store, days = []) {
   const records = teachers.map((t) => computeTeacher(t, store, days));
   const withData = records.filter((r) => r.daysObserved > 0);
   const composite = withData.length ? avg(withData.map((r) => r.composite)) : 0;
@@ -310,4 +317,4 @@ export function statusTone(score) {
 }
 
 export const teacherById = (teachers, id) => teachers.find((t) => t.id === id);
-export { ITEMS, ITEM_BY_KEY, PILLARS, PILLAR_ITEMS, PILLAR_MAX, MAX_TOTAL, WORKING_DAYS, WEEKS, clamp };
+export { ITEMS, ITEM_BY_KEY, PILLARS, PILLAR_ITEMS, PILLAR_MAX, MAX_TOTAL, clamp };

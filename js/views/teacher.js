@@ -1,6 +1,6 @@
 /* Teacher case file — opens from anywhere as a drawer. */
 
-import { ITEMS, PILLARS, WORKING_DAYS, SCHOOL } from '../data.js';
+import { ITEMS, PILLARS, SCHOOL } from '../data.js';
 import { el, round, fmtDate, fmtDateLong, weekday, initials, plural } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import { avatar, scoreChip, trendPill, gradeBadge } from '../components.js';
@@ -11,10 +11,10 @@ import { getMark, dayFilledCount } from '../scoring.js';
 import { setObservation, addAction } from '../store.js';
 import { toast } from '../util.js';
 
-let current = { app: null, id: null, tab: 'overview', day: WORKING_DAYS[WORKING_DAYS.length - 1] };
+let current = { app: null, id: null, tab: 'overview', day: null };
 
 export function openTeacherDrawer(app, id, tab = 'overview') {
-  current = { app, id, tab, day: WORKING_DAYS[WORKING_DAYS.length - 1] };
+  current = { app, id, tab, day: (app.days || []).slice(-1)[0] || null };
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-backdrop').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -104,7 +104,7 @@ function tabOverview(app, rec, teacher) {
     el('div', { class: 'card card-pad' },
       el('div', { class: 'label', style: 'font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:700' }, 'Monitoring coverage'),
       el('div', { style: 'font-family:var(--serif);font-size:30px;font-weight:600' }, rec.daysObserved ? `${Math.round(rec.coverage)}%` : '—'),
-      el('div', { class: 'tiny muted' }, `${rec.daysObserved}/${WORKING_DAYS.length} days · ${rec.daysComplete} complete`)),
+      el('div', { class: 'tiny muted' }, `${rec.daysObserved}/${rec.periodDays} days · ${rec.daysComplete} complete`)),
   ));
 
   wrap.append(el('div', { class: 'card card-pad mb14' },

@@ -7,7 +7,7 @@
    sheet by importing the workbook, or keeps printing from here.
    ========================================================================= */
 
-import { SCHOOL, ITEMS, PILLARS, WORKING_DAYS, WEEKS } from './data.js';
+import { SCHOOL, ITEMS, PILLARS } from './data.js';
 import { el, fmtDate, toCSV, downloadFile, round, avg, toast } from './util.js';
 import { icon, iconEl } from './icons.js';
 import { weeklyAttendance } from './scoring.js';
@@ -29,6 +29,9 @@ export function setLinks({ sheet, sheetId, folder, folderId } = {}) {
 /* --- workbook definition ---------------------------------------------- */
 export function workbook(app) {
   const { school, state } = app;
+  const period = state.period || { days: [], weeks: [], range: SCHOOL.monitorPeriod, label: '' };
+  const days = period.days || [];
+  const weeks = period.weeks || [];
   const sheets = [];
 
   sheets.push({
@@ -37,7 +40,7 @@ export function workbook(app) {
       ['GOVT. BOYS MODEL HIGH SCHOOL, LAYYAH'],
       [`EMIS ${SCHOOL.emis} · ${SCHOOL.session}`],
       ['Principal', SCHOOL.principal],
-      ['Monitoring period', SCHOOL.monitorPeriod],
+      ['Monitoring period', period.range],
       [],
       ['Metric', 'Value'],
       ['School composite (%)', school.composite],
@@ -85,7 +88,7 @@ export function workbook(app) {
     name: 'Daily checklist',
     rows: [
       ['Date', 'Teacher', 'Class', ...ITEMS.map((i) => i.key), 'Points', 'Available', '%'],
-      ...WORKING_DAYS.flatMap((d) => state.teachers.map((t) => {
+      ...days.flatMap((d) => state.teachers.map((t) => {
         const e = state.entries?.[t.id]?.[d];
         if (!e) return null;
         const marks = ITEMS.map((i) => (e[i.key] === undefined ? '' : e[i.key]));
@@ -99,9 +102,9 @@ export function workbook(app) {
   sheets.push({
     name: 'Attendance register',
     rows: [
-      ['Sr', 'Class', 'Incharge', 'Enrolment', ...WEEKS.flatMap((w) => [`${w.label} asm %`, `${w.label} days`]), 'Month %'],
+      ['Sr', 'Class', 'Incharge', 'Enrolment', ...weeks.flatMap((w) => [`${w.label} asm %`, `${w.label} days`]), 'Month %'],
       ...state.teachers.map((t) => {
-        const w = weeklyAttendance(t, state);
+        const w = weeklyAttendance(t, state, days);
         const r = app.records[t.id];
         return [t.sr, t.cls, t.name, t.enrollment,
           ...w.flatMap((x) => [x.pct === null ? '' : round(x.pct, 1), x.days]),

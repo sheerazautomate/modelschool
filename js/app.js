@@ -2,7 +2,10 @@
    App shell: state, routing, and the render loop.
    ========================================================================= */
 
-import { SCHOOL, WORKING_DAYS, ITEMS } from './data.js';
+import { SCHOOL, ITEMS } from './data.js';
+import {
+  ensurePeriod, buildPeriod, monthKey, latestOpenDay, monthLabel,
+} from './period.js';
 import {
   load, save, blankState, generateDemo, clearStorage, setMark,
   setObservation, addAction, removeAction, toggleActionDone, saveNote,
@@ -40,7 +43,7 @@ export const App = {
   mode: 'demo',
   view: 'dashboard',
   params: {},
-  selectedDay: WORKING_DAYS[WORKING_DAYS.length - 1],
+  selectedDay: null,
   search: '',
   filters: { grade: 'all', week: 'all', pillar: 'all', sort: 'composite', dir: 'desc' },
   listeners: [],
@@ -57,6 +60,10 @@ export const App = {
     }
     ensureSync(this.state);
     seedStamps(this.state);
+    /* A save from an earlier build has no period. Repair it before anything
+       reads a day, or every screen would render an empty month. */
+    this.state.period = ensurePeriod(this.state);
+    this.selectedDay = latestOpenDay(this.state.period.days);
     bridge.loadSettings();
     this.recompute();
     this.mount();
@@ -123,8 +130,65 @@ export const App = {
   },
 
   recompute() {
-    this.school = computeSchool(this.state.teachers, this.state);
+    const days = this.state.period?.days || [];
+    this.school = computeSchool(this.state.teachers, this.state, days);
     this.records = Object.fromEntries(this.school.records.map((r) => [r.id, r]));
+  },
+
+  /* --- period --------------------------------------------------------- */
+
+  get days() { return this.state.period?.days || []; },
+  get weeks() { return this.state.period?.weeks || []; },
+  get periodLabel() { return this.state.period?.label || monthLabel(monthKey()); },
+
+  /* Switching month changes which days are markable. It does not delete
+     anything: marks already recorded against other months stay in state. */
+  setPeriod(key) {
+    const holidays = this.state.period?.holidays || [];
+    this.state.period = buildPeriod(key, holidays);
+    this.selectedDay = latestOpenDay(this.state.period.days);
+    this.params = {};
+    this.commit();
+    toast(`Now recording ${this.state.period.label}.`);
+  },
+
+  /* Begin a real month. Distinct from clearStorage(): it keeps the roster,
+     the remarks and the sheet connection, and only removes the sample marks
+     for the chosen period. */
+  startLive(key) {
+    const base = blankState(key);
+    base.teachers = this.state.teachers;
+    base.observations = this.state.observations || {};
+    base.actions = this.state.actions || [];
+    base.notes = this.state.notes || {};
+    base.period = buildPeriod(key, this.state.period?.holidays || []);
+    base.mode = 'live';
+    /* Unsent mark operations describe the sample marks that were just
+       cleared. Keeping them would push those marks back into the sheet and
+       undo the reset, so they are dropped. Remarks, undertakings and the
+       cursor are kept: those are real work and nothing depends on the marks. */
+    const sync = this.state.sync || {};
+    base.sync = {
+      ...sync,
+      ops: (sync.ops || []).filter((o) => o.kind !== 'mark'),
+    };
+    this.state = base;
+    this.mode = 'live';
+    this.selectedDay = latestOpenDay(this.state.period.days);
+    this.params = {};
+    this.commit();
+    toast(`${monthLabel(key)} is ready for real entry.`);
+    this.navigate('entry');
+  },
+
+  setHolidays(list) {
+    const key = this.state.period?.key || monthKey();
+    this.state.period = buildPeriod(key, list);
+    if (!this.state.period.days.includes(this.selectedDay)) {
+      this.selectedDay = latestOpenDay(this.state.period.days);
+    }
+    this.commit();
+    toast(`Saved — ${this.state.period.days.length} school days this month.`);
   },
 
   commit({ rerender = true, quiet = true } = {}) {

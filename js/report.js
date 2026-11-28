@@ -4,7 +4,7 @@
    sync reproduces as a workbook.
    ========================================================================= */
 
-import { SCHOOL, ITEMS, PILLARS, WORKING_DAYS, WEEKS } from './data.js';
+import { SCHOOL, ITEMS, PILLARS } from './data.js';
 import { el, fmtDate, fmtDateLong, round, avg, plural } from './util.js';
 import { buildExplanation, weakestText } from './narrative.js';
 import { gradeFor } from './scoring.js';
@@ -41,17 +41,19 @@ function signatureBlock({ extra = null } = {}) {
 /* --- 1. School monthly report ----------------------------------------- */
 export function schoolReport(app) {
   const { school, state } = app;
+  const period = state.period || { range: SCHOOL.monitorPeriod, days: [], weeks: [] };
+  const days = period.days || [];
   const doc = el('div', { class: 'report-sheet' });
   doc.append(head('Monthly Monitoring & Performance Report', [
-    { k: 'Period', v: SCHOOL.monitorPeriod },
-    { k: 'Working days', v: String(WORKING_DAYS.length) },
+    { k: 'Period', v: period.range },
+    { k: 'Working days', v: String(days.length) },
     { k: 'Teachers monitored', v: `${school.ranked.length} of ${school.totalTeachers}` },
     { k: 'School composite', v: `${school.composite}% (Grade ${school.grade.grade})` },
   ]));
 
   doc.append(el('h4', {}, '1. Summary of the position'));
   doc.append(el('p', {},
-    `The school was monitored on ${WORKING_DAYS.length} working days during ${SCHOOL.monitorPeriod}. `
+    `The school was monitored on ${days.length} working days during ${period.range}. `
     + `${school.ranked.length} of ${school.totalTeachers} incharges have a monitoring record. `
     + `The weighted school composite is ${school.composite}%, placing the school in Grade ${school.grade.grade} (${school.grade.label}). `
     + `${school.ranked.filter((r) => r.composite >= 70).length} teachers clear the 70% benchmark, `
@@ -148,8 +150,9 @@ export function teacherReport(app, record) {
   ]));
 
   doc.append(el('div', { class: 'report-meta' },
-    el('div', { class: 'm' }, el('div', { class: 'k' }, 'Period'), el('div', { class: 'v' }, SCHOOL.monitorPeriod)),
-    el('div', { class: 'm' }, el('div', { class: 'k' }, 'Days monitored'), el('div', { class: 'v' }, `${record.daysObserved} of ${WORKING_DAYS.length}`)),
+    el('div', { class: 'm' }, el('div', { class: 'k' }, 'Period'),
+      el('div', { class: 'v' }, app.state.period?.range || SCHOOL.monitorPeriod)),
+    el('div', { class: 'm' }, el('div', { class: 'k' }, 'Days monitored'), el('div', { class: 'v' }, `${record.daysObserved} of ${record.periodDays}`)),
     el('div', { class: 'm' }, el('div', { class: 'k' }, 'Enrolment'), el('div', { class: 'v' }, String(t.enrollment))),
     el('div', { class: 'm' }, el('div', { class: 'k' }, 'Trend'), el('div', { class: 'v' }, record.trend.direction === 'up' ? `Improving (+${Math.abs(record.trend.delta)}%)` : record.trend.direction === 'down' ? `Declining (${record.trend.delta}%)` : 'Steady')),
   ));
@@ -280,18 +283,19 @@ export function blankForm(app, teacherId, day) {
 
 /* --- 5. Attendance sheet ---------------------------------------------- */
 export function attendanceSheet(app) {
+  const period = app.state.period || { range: SCHOOL.monitorPeriod, days: [], weeks: [] };
   const doc = el('div', { class: 'report-sheet' });
   doc.append(head('Assembly & Class Attendance Register', [
     { k: 'EMIS', v: SCHOOL.emis },
-    { k: 'Period', v: SCHOOL.monitorPeriod },
+    { k: 'Period', v: period.range },
     { k: 'Classes', v: String(app.state.teachers.length) },
     { k: 'Total on roll', v: app.school.enrollment.toLocaleString('en-GB') },
   ]));
 
   const table = el('table');
-  table.append(el('tr', {}, ...['Sr.', 'Class', 'Incharge', 'Roll', ...WEEKS.map((w) => w.label), 'Month'].map((h) => el('th', {}, h))));
+  table.append(el('tr', {}, ...['Sr.', 'Class', 'Incharge', 'Roll', ...period.weeks.map((w) => w.label), 'Month'].map((h) => el('th', {}, h))));
   app.state.teachers.forEach((t) => {
-    const weeks = weeklyAttendance(t, app.state);
+    const weeks = weeklyAttendance(t, app.state, period.days);
     const rec = app.records[t.id];
     table.append(el('tr', {},
       el('td', {}, String(t.sr)),

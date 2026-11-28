@@ -1,6 +1,6 @@
 /* Daily Checklist — the marking screen, laid out like page 1 of the form. */
 
-import { ITEMS, WORKING_DAYS, SCHOOL } from '../data.js';
+import { ITEMS, SCHOOL } from '../data.js';
 import { el, fmtDate, weekday, round, initials, plural } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import { viewHead, card, avatar, emptyState } from '../components.js';
@@ -10,28 +10,43 @@ import { scoreColor } from '../charts.js';
 
 export function renderEntry(app) {
   const root = el('div');
-  const day = app.params.day || app.selectedDay;
-  let teacherId = app.params.teacherId || app.state.teachers[0]?.id;
+  const days = app.days;
+  /* The day must be re-read on every redraw: the principal can move between
+     days without leaving the screen, and the strip, the header score and the
+     picker counter all follow whichever day is selected. */
+  let day = app.params.day || app.selectedDay || days[days.length - 1];
+  let teacherId = app.params.teacherId
+    || app.selectedTeacher
+    || app.state.teachers[0]?.id;
 
   root.append(viewHead({
     title: 'Daily checklist',
-    subtitle: 'Mark each of the fifteen items exactly as the printed form scores them. Leave an item blank if it was not checked — a blank is not the same as a zero.',
+    subtitle: `Mark each of the fifteen items exactly as the printed form scores them, for ${app.periodLabel}. Leave an item blank if it was not checked — a blank is not the same as a zero.`,
     actions: [
       el('button', { class: 'btn', onclick: () => app.navigate('reports') }, iconEl('print'), 'Print a blank form'),
     ],
   }));
 
   /* --- teacher picker as a sidebar -------------------------------- */
-  const picker = el('div', { class: 'card', style: 'position:sticky;top:82px;max-height:calc(100vh - 110px);overflow-y:auto' });
-  const pickerHead = el('div', { class: 'card-head' },
+  const picker = el('div', { class: 'card entry-picker' });
+  const counter = el('span', { class: 'chip muted' });
+  const pickerHead = el('div', { class: 'card-head', style: 'align-items:center' },
     el('h3', {}, 'Select incharge'),
     el('div', { class: 'spacer' }),
-    el('span', { class: 'chip muted' }, String(app.state.teachers.length)),
+    counter,
   );
+  const drawCounter = () => {
+    const pendingCount = app.state.teachers
+      .filter((t) => dayFilledCount(app.state, t.id, day) < ITEMS.length).length;
+    counter.textContent = pendingCount ? `${pendingCount} left` : 'all marked';
+    counter.title = `${app.state.teachers.length} incharges; ${pendingCount} still to mark on ${day}`;
+  };
   picker.append(pickerHead);
   const list = el('div', { style: 'padding:6px' });
+  picker.append(list);
 
   const drawPicker = () => {
+    drawCounter();
     list.innerHTML = '';
     app.state.teachers.forEach((t) => {
       const filled = dayFilledCount(app.state, t.id, day);
@@ -39,12 +54,19 @@ export function renderEntry(app) {
       const active = t.id === teacherId;
       list.append(el('button', {
         class: `nav-item ${active ? 'active' : ''}`,
+        dataset: { teacher: t.id },
         style: 'width:100%;padding:7px 8px',
         onclick: () => {
           teacherId = t.id;
+          app.selectedTeacher = t.id;
           app.params.teacherId = t.id;
           drawPicker();
           drawPanel();
+          /* Keep the chosen incharge in view in a long roster. Guarded: an
+             embedded webview may not implement scrollIntoView, and a throw
+             here would abort the rest of the handler. */
+          const row = list.querySelector(`[data-teacher="${t.id}"]`);
+          if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
         },
       },
         el('div', { class: 'avatar', style: active ? 'background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.3)' : '' }, initials(t.name)),
@@ -60,6 +82,27 @@ export function renderEntry(app) {
   };
 
   const panelHost = el('div');
+  let headHost = null;
+
+  /* Rebuild just the incharge header, leaving the rubric the principal is
+     tapping in place. Rebuilding the whole panel would lose scroll position
+     and re-number the items mid-entry. */
+  const refreshHead = () => {
+    const teacher = app.teacher(teacherId);
+    if (!teacher || !headHost) return;
+    const rec = computeTeacher(teacher, app.state, app.days);
+    const box = headHost.querySelector('[data-score]');
+    if (!box) return;
+    box.innerHTML = '';
+    box.append(
+      el('div', { class: 'tiny muted' }, 'Month to date'),
+      el('div', { style: `font-family:var(--serif);font-size:22px;font-weight:600;color:${scoreColor(rec.composite)}` },
+        rec.daysObserved ? `${rec.composite}%` : '—'),
+      el('div', { class: 'tiny muted' }, rec.daysObserved
+        ? `Grade ${rec.grade.grade} · ${rec.daysObserved} days`
+        : 'no entries yet'),
+    );
+  };
 
   const drawPanel = () => {
     panelHost.innerHTML = '';
@@ -68,7 +111,7 @@ export function renderEntry(app) {
       panelHost.append(card({ body: emptyState('No teacher selected', 'Choose an incharge from the list.') }));
       return;
     }
-    const rec = computeTeacher(teacher, app.state);
+    const rec = computeTeacher(teacher, app.state, app.days);
 
     const head = el('div', { class: 'card', style: 'margin-bottom:14px' },
       el('div', { class: 'card-pad split', style: 'flex-wrap:wrap;gap:14px' },
@@ -77,7 +120,7 @@ export function renderEntry(app) {
           el('div', { style: 'font-family:var(--serif);font-size:18px;font-weight:600' }, teacher.name),
           el('div', { class: 'small muted' }, `${teacher.designation} · class ${teacher.cls} · ${plural(teacher.enrollment, 'student', 'students')}`)),
         el('div', { style: 'flex:1' }),
-        el('div', { style: 'text-align:right' },
+        el('div', { style: 'text-align:right', dataset: { score: '1' } },
           el('div', { class: 'tiny muted' }, 'Month to date'),
           el('div', { style: `font-family:var(--serif);font-size:22px;font-weight:600;color:${scoreColor(rec.composite)}` },
             rec.daysObserved ? `${rec.composite}%` : '—'),
@@ -86,11 +129,13 @@ export function renderEntry(app) {
       ),
     );
     panelHost.append(head);
+    headHost = head;
 
     panelHost.append(card({
       title: 'Choose the day',
       sub: 'Green means the day is fully marked, amber means partly marked',
       body: dayStrip(app, teacher.id, day, (d) => {
+        day = d;
         app.selectedDay = d;
         app.params.day = d;
         drawPicker();
@@ -99,7 +144,12 @@ export function renderEntry(app) {
     }));
 
     const rubric = rubricPanel(app, teacher.id, day, {
-      onChange: () => drawPicker(),
+      onChange: () => {
+        /* The month-to-date grade in the header is derived from these marks,
+           so refresh it alongside the roster progress. */
+        drawPicker();
+        refreshHead();
+      },
     });
 
     panelHost.append(el('div', { class: 'mt14' }, card({
@@ -112,7 +162,7 @@ export function renderEntry(app) {
   drawPicker();
   drawPanel();
 
-  root.append(el('div', { style: 'display:grid;grid-template-columns:250px 1fr;gap:14px;align-items:start' },
+  root.append(el('div', { class: 'entry-split' },
     picker,
     el('div', {}, panelHost),
   ));
@@ -122,7 +172,7 @@ export function renderEntry(app) {
   summary.append(el('thead', {}, el('tr', {},
     el('th', {}, 'Item'),
     el('th', { class: 'num' }, 'Max'),
-    ...WORKING_DAYS.slice(-5).map((d) => el('th', { class: 'num' }, fmtDate(d))),
+    ...days.slice(-5).map((d) => el('th', { class: 'num' }, fmtDate(d))),
     el('th', { class: 'num' }, 'Month avg'),
   )));
   const tb = el('tbody');
@@ -132,11 +182,11 @@ export function renderEntry(app) {
       el('td', { class: 'num' }, String(item.max)),
     );
     const vals = [];
-    WORKING_DAYS.forEach((d) => {
+    days.forEach((d) => {
       const v = getMark(app.state, teacherId, d, item.key);
       if (v !== null) vals.push(v);
     });
-    WORKING_DAYS.slice(-5).forEach((d) => {
+    days.slice(-5).forEach((d) => {
       const v = getMark(app.state, teacherId, d, item.key);
       tr.append(el('td', { class: 'num', style: v === null ? 'color:var(--ink-4)' : v === 0 ? 'color:var(--red);font-weight:700' : '' },
         v === null ? '—' : String(v)));

@@ -2,7 +2,7 @@
    teacher case-file drawer. One shared implementation keeps marking
    behaviour identical wherever the principal touches it. */
 
-import { ITEMS, PILLARS, MAX_TOTAL, WORKING_DAYS } from './data.js';
+import { ITEMS, PILLARS, MAX_TOTAL } from './data.js';
 import { el, fmtDate, weekday, round } from './util.js';
 import { icon } from './icons.js';
 import { dayFilledCount, getMark, isDayComplete } from './scoring.js';
@@ -10,11 +10,13 @@ import { scoreColor } from './charts.js';
 
 export function dayStrip(app, teacherId, selectedDay, onSelect) {
   const strip = el('div', { class: 'day-strip' });
-  WORKING_DAYS.forEach((d) => {
+  (app.days || []).forEach((d) => {
     const filled = dayFilledCount(app.state, teacherId, d);
     const complete = filled === ITEMS.length;
+    const today = d === new Date().toISOString().slice(0, 10);
     strip.append(el('button', {
-      class: `day-chip ${d === selectedDay ? 'on' : ''} ${complete ? 'complete' : filled ? 'partial' : ''}`,
+      class: `day-chip ${d === selectedDay ? 'on' : ''} ${complete ? 'complete' : filled ? 'partial' : ''}${today ? ' today' : ''}`,
+      dataset: { day: d },
       onclick: () => onSelect(d),
       title: `${fmtDate(d, { day: '2-digit', month: 'short', year: 'numeric' })} — ${filled}/${ITEMS.length} items marked`,
     },

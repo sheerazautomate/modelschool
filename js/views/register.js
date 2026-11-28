@@ -1,6 +1,6 @@
 /* Attendance Register — mirrors page 2 and page 3 of the inspection file. */
 
-import { ASSEMBLY_REGISTER, WEEKS, WORKING_DAYS, SCHOOL } from '../data.js';
+import { ASSEMBLY_REGISTER, SCHOOL } from '../data.js';
 import { el, round, avg, fmtDate, weekday, plural, fmtDateLong } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import { viewHead, card, scoreChip, emptyState } from '../components.js';
@@ -16,7 +16,7 @@ export function renderRegister(app) {
 
   root.append(viewHead({
     title: 'Attendance register',
-    subtitle: `Daily assembly and class attendance, ${SCHOOL.monitorPeriod} · the four weekly blocks printed on the inspection sheet`,
+    subtitle: `Daily assembly and class attendance, ${app.state.period?.range || SCHOOL.monitorPeriod} · the weekly blocks printed on the inspection sheet`,
     actions: [
       el('button', { class: 'btn', onclick: () => window.print() }, iconEl('print'), 'Print register'),
     ],
@@ -60,7 +60,7 @@ function weeklyRegister(app) {
     el('th', {}, 'Class'),
     el('th', { class: 'num' }, 'Enrolment'),
   );
-  WEEKS.forEach((w) => {
+  (app.weeks || []).forEach((w) => {
     head.append(el('th', { class: 'num' }, `${w.label} asm`));
     head.append(el('th', { class: 'num' }, `${w.label} cls`));
   });
@@ -74,7 +74,7 @@ function weeklyRegister(app) {
   app.state.teachers.forEach((t) => {
     totalEnrol += t.enrollment;
     const rec = app.records[t.id];
-    const weeks = weeklyAttendance(t, state);
+    const weeks = weeklyAttendance(t, state, app.days);
     const tr = el('tr', { class: 'clickable', onclick: () => app.openTeacher(t.id) },
       el('td', { class: 'num' }, String(t.sr)),
       el('td', {}, t.name),
@@ -110,8 +110,8 @@ function weeklyRegister(app) {
   );
 
   /* Weekly line chart */
-  const weeklyAvg = WEEKS.map((w) => {
-    const vals = state.teachers.map((t) => weeklyAttendance(t, state).find((x) => x.key === w.key)?.pct).filter((v) => v !== null && v !== undefined);
+  const weeklyAvg = (app.weeks || []).map((w) => {
+    const vals = state.teachers.map((t) => weeklyAttendance(t, state, app.days).find((x) => x.key === w.key)?.pct).filter((v) => v !== null && v !== undefined);
     return { day: w.label, pct: vals.length ? round(avg(vals), 1) : null, rawPct: vals.length ? avg(vals) : 0 };
   });
 
@@ -124,7 +124,7 @@ function weeklyRegister(app) {
     }),
     el('div', { class: 'grid g-2 mt14' },
       card({
-        title: 'Four-week trend',
+        title: 'Week-by-week trend',
         sub: 'Average across all classes',
         body: lineChart(weeklyAvg.filter((w) => w.pct !== null), { width: 460, height: 190, benchmark: 80 }),
       }),
@@ -150,7 +150,7 @@ function dailyHeat(app) {
 
   const grid = heatGrid(
     state.teachers,
-    WORKING_DAYS,
+    app.days,
     (t, d) => {
       const v = state.entries?.[t.id]?.[d]?.attendance;
       return v === undefined || v === null ? null : bandToPct(Number(v));
@@ -170,7 +170,7 @@ function dailyHeat(app) {
 
   return card({
     title: 'Daily attendance grid',
-    sub: `${plural(WORKING_DAYS.length, 'working day', 'working days')} × ${plural(state.teachers.length, 'class', 'classes')} — hover any square for the exact band`,
+    sub: `${plural(app.days.length, 'working day', 'working days')} × ${plural(state.teachers.length, 'class', 'classes')} — hover any square for the exact band`,
     body: [tooltip, el('div', { style: 'overflow-x:auto;padding-bottom:6px' }, grid), scale],
   });
 }

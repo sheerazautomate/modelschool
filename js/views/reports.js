@@ -1,6 +1,6 @@
 /* Reports — pick a document, preview it, print it as PDF, or push to Drive. */
 
-import { WORKING_DAYS, SCHOOL } from '../data.js';
+import { SCHOOL } from '../data.js';
 import { el, fmtDate, fmtDateLong, plural } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import { viewHead, card, emptyState, gradeBadge } from '../components.js';
@@ -87,14 +87,14 @@ export function renderReports(app) {
           el('select', { class: 'select', style: 'max-width:260px', onchange: (e) => { selected = e.target.value; drawPreview(); } },
             ...app.state.teachers.map((t) => el('option', { value: t.id, selected: t.id === selected }, `${t.name} — ${t.cls}`))),
           el('select', { class: 'select', style: 'max-width:200px', id: 'form-day' },
-            ...WORKING_DAYS.map((d) => el('option', { value: d, selected: d === WORKING_DAYS[WORKING_DAYS.length - 1] }, fmtDate(d, { day: '2-digit', month: 'short', year: 'numeric' })))),
+            ...app.days.map((d) => el('option', { value: d, selected: d === app.days[app.days.length - 1] }, fmtDate(d, { day: '2-digit', month: 'short', year: 'numeric' })))),
           el('span', { class: 'spacer', style: 'flex:1' }),
           el('button', { class: 'btn btn-primary', onclick: () => {
             const day = document.getElementById('form-day').value;
             printNode(blankForm(app, selected, day));
           } }, iconEl('print'), 'Print form'),
         ),
-        blankForm(app, selected, WORKING_DAYS[WORKING_DAYS.length - 1]));
+        blankForm(app, selected, app.days[app.days.length - 1]));
       filename = 'daily-checklist';
     } else {
       const builder = activeDoc === 'attendance' ? attendanceSheet : schoolReport;
