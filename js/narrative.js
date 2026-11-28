@@ -4,7 +4,7 @@
    an improvement plan with dates, and a follow-up schedule.
    ========================================================================= */
 
-import { PILLARS, PILLAR_ITEMS, WORKING_DAYS, SCHOOL } from './data.js';
+import { PILLARS, PILLAR_ITEMS, SCHOOL } from './data.js';
 import { avg, fmtDateLong, fmtDate, sum, round } from './util.js';
 
 const nf = new Intl.NumberFormat('en-GB');
@@ -131,7 +131,7 @@ export function buildExplanation(record, school, store) {
     paragraphs.push({
       kind: 'data',
       title: 'Reliability of this finding',
-      text: `The checklist was completed on ${record.daysObserved} of ${WORKING_DAYS.length} working days (${Math.round(record.coverage)}% coverage), `
+      text: `The checklist was completed on ${record.daysObserved} of ${record.periodDays} working days (${Math.round(record.coverage)}% coverage), `
         + `and all fifteen items were present on ${record.daysComplete} of those days. `
         + (record.coverage >= 80
           ? 'Coverage is sufficient to treat this finding as reliable.'
@@ -289,7 +289,7 @@ export function buildPlan(record) {
 
 export function buildFollowups(record) {
   const today = new Date();
-  const base = new Date(`${WORKING_DAYS[WORKING_DAYS.length - 1]}T00:00:00`);
+  const base = new Date(`${record.rows.slice(-1)[0]?.day || new Date().toISOString().slice(0, 10)}T00:00:00`);
   const start = today > base ? today : base;
   const steps = [
     { when: 3, title: 'Written intimation', text: 'Teach the teacher the specific findings and hand over a copy of this report.' },

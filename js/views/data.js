@@ -7,6 +7,7 @@ import { viewHead, card } from '../components.js';
 import { workbook, pushToSheets, openDrivePanel, downloadWorkbook, modal } from '../sync.js';
 import * as bridge from '../bridge.js';
 import { pending } from '../ops.js';
+import { monthChoices, monthLabel, monthKey, workingDaysFor, addMonths } from '../period.js';
 
 export function renderData(app) {
   const root = el('div');
@@ -15,8 +16,12 @@ export function renderData(app) {
 
   root.append(viewHead({
     title: 'Data & sync',
-    subtitle: 'The console works offline and stores everything in this browser. Use this page to load the sample set, switch to live entry, or move the record in and out.',
+    subtitle: `Recording ${app.periodLabel}. Marks save on this device instantly and reach the Google Sheet within seconds.`,
   }));
+
+  /* the month being recorded — first thing on the page, because nothing else
+     matters until the principal is on the right month */
+  root.append(periodCard(app));
 
   /* mode */
   root.append(el('div', { class: 'grid g-2 mb14' },
@@ -129,6 +134,83 @@ export function renderData(app) {
   })));
 
   return root;
+}
+
+/* --- which month is being recorded ------------------------------------- */
+
+function periodCard(app) {
+  const period = app.state.period || {};
+  const key = period.key || monthKey();
+  const choices = monthChoices(15);
+  if (!choices.some((c) => c.key === key)) {
+    choices.unshift({ key, label: monthLabel(key) });
+  }
+
+  const select = el('select', {
+    class: 'input',
+    onchange: (e) => app.setPeriod(e.target.value),
+  }, ...choices.map((c) => el('option', { value: c.key, selected: c.key === key }, c.label)));
+
+  const holidayInput = el('input', {
+    class: 'input',
+    type: 'text',
+    placeholder: 'e.g. 2026-11-09, 2026-11-10',
+    value: (period.holidays || []).join(', '),
+    spellcheck: 'false',
+  });
+
+  const applied = (period.holidays || []).length;
+  const marked = Object.values(app.state.entries || {}).reduce((n, t) => n
+    + Object.keys(t || {}).filter((d) => (period.days || []).includes(d)).length, 0);
+
+  return card({
+    title: 'Month being recorded',
+    sub: 'Changing this does not delete anything — marks stay with the month they were recorded in',
+    body: el('div', {},
+      el('div', { class: 'grid g-2', style: 'gap:12px' },
+        el('label', { class: 'field' }, el('span', { class: 'field-label' }, 'Reporting month'), select),
+        el('label', { class: 'field' },
+          el('span', { class: 'field-label' }, 'Holidays in this month (comma separated dates)'),
+          el('div', { class: 'split', style: 'gap:8px' },
+            holidayInput,
+            el('button', {
+              class: 'btn',
+              onclick: () => {
+                const raw = holidayInput.value.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
+                const bad = raw.filter((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d) || !d.startsWith(key));
+                if (bad.length) {
+                  toast(`Use full dates inside ${monthLabel(key)}, e.g. ${key}-09. Not recognised: ${bad.join(', ')}`, 'error');
+                  return;
+                }
+                app.setHolidays(raw);
+              },
+            }, iconEl('check'), 'Apply')),
+        ),
+      ),
+      el('div', { class: 'kv mt12' },
+        el('dt', {}, 'School days'), el('dd', {}, `${(period.days || []).length} working days`),
+        el('dt', {}, 'Weeks'), el('dd', {}, String((period.weeks || []).length)),
+        el('dt', {}, 'Days already marked'), el('dd', {}, marked.toLocaleString('en-GB')),
+        el('dt', {}, 'Holidays excluded'), el('dd', {}, applied ? String(applied) : 'none'),
+        el('dt', {}, 'Dataset'), el('dd', {}, app.mode === 'demo' ? 'Sample data — not a real record' : 'Live record'),
+      ),
+      el('div', { class: 'split wrap mt12' },
+        el('button', { class: 'btn btn-primary', onclick: () => app.navigate('entry') },
+          iconEl('checklist'), 'Record today\u2019s checklist'),
+        el('button', {
+          class: 'btn',
+          onclick: () => {
+            if (confirm(`Start a clean record for ${monthLabel(key)}?\n\nThis clears the sample marks on every screen and leaves you with an empty ${monthLabel(key)} ready for real entry. Teachers, remarks you have written for other months and the Sheet connection are kept.`)) {
+              app.startLive(key);
+            }
+          },
+        }, iconEl('refresh'), 'Start a clean month'),
+      ),
+      el('div', { class: 'note mt10' },
+        el('b', {}, 'To record a reading: '),
+        'open Daily Checklist, pick the incharge and the day, then tap the option for each of the fifteen items. A tap saves it on this device at once and sends it to the sheet. Blank means not checked, which is different from a zero.'),
+    ),
+  });
 }
 
 /* --- live connection to the school's sheet ----------------------------- */

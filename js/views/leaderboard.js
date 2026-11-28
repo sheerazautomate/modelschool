@@ -1,6 +1,6 @@
 /* Teachers — the full roster, sortable and filterable. */
 
-import { PILLARS, ITEMS, WORKING_DAYS } from '../data.js';
+import { PILLARS, ITEMS } from '../data.js';
 import { el, round, debounce, plural } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import { viewHead, card, teacherRow, scoreChip, trendPill, emptyState } from '../components.js';

@@ -1,6 +1,6 @@
 /* Daily Checklist — the marking screen, laid out like page 1 of the form. */
 
-import { ITEMS, WORKING_DAYS, SCHOOL } from '../data.js';
+import { ITEMS, SCHOOL } from '../data.js';
 import { el, fmtDate, weekday, round, initials, plural } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import { viewHead, card, avatar, emptyState } from '../components.js';
@@ -10,12 +10,13 @@ import { scoreColor } from '../charts.js';
 
 export function renderEntry(app) {
   const root = el('div');
-  const day = app.params.day || app.selectedDay;
+  const days = app.days;
+  const day = app.params.day || app.selectedDay || days[days.length - 1];
   let teacherId = app.params.teacherId || app.state.teachers[0]?.id;
 
   root.append(viewHead({
     title: 'Daily checklist',
-    subtitle: 'Mark each of the fifteen items exactly as the printed form scores them. Leave an item blank if it was not checked — a blank is not the same as a zero.',
+    subtitle: `Mark each of the fifteen items exactly as the printed form scores them, for ${app.periodLabel}. Leave an item blank if it was not checked — a blank is not the same as a zero.`,
     actions: [
       el('button', { class: 'btn', onclick: () => app.navigate('reports') }, iconEl('print'), 'Print a blank form'),
     ],
@@ -122,7 +123,7 @@ export function renderEntry(app) {
   summary.append(el('thead', {}, el('tr', {},
     el('th', {}, 'Item'),
     el('th', { class: 'num' }, 'Max'),
-    ...WORKING_DAYS.slice(-5).map((d) => el('th', { class: 'num' }, fmtDate(d))),
+    ...days.slice(-5).map((d) => el('th', { class: 'num' }, fmtDate(d))),
     el('th', { class: 'num' }, 'Month avg'),
   )));
   const tb = el('tbody');
@@ -132,11 +133,11 @@ export function renderEntry(app) {
       el('td', { class: 'num' }, String(item.max)),
     );
     const vals = [];
-    WORKING_DAYS.forEach((d) => {
+    days.forEach((d) => {
       const v = getMark(app.state, teacherId, d, item.key);
       if (v !== null) vals.push(v);
     });
-    WORKING_DAYS.slice(-5).forEach((d) => {
+    days.slice(-5).forEach((d) => {
       const v = getMark(app.state, teacherId, d, item.key);
       tr.append(el('td', { class: 'num', style: v === null ? 'color:var(--ink-4)' : v === 0 ? 'color:var(--red);font-weight:700' : '' },
         v === null ? '—' : String(v)));

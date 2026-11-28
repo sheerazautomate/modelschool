@@ -1,6 +1,6 @@
 /* Overview — the one screen the principal reads first. */
 
-import { SCHOOL, PILLARS, ITEMS, WORKING_DAYS } from '../data.js';
+import { SCHOOL, PILLARS, ITEMS } from '../data.js';
 import { el, round, avg, fmtDate, fmtDateLong, plural } from '../util.js';
 import { icon, iconEl } from '../icons.js';
 import {
@@ -27,7 +27,7 @@ export function renderDashboard(app) {
 
   root.append(viewHead({
     title: 'Principal’s overview',
-    subtitle: `${SCHOOL.principal} · school-wide position for ${SCHOOL.monitorPeriod} · ${school.totalTeachers} incharges · ${school.enrollment.toLocaleString('en-GB')} students on roll`,
+    subtitle: `${SCHOOL.principal} · school-wide position for ${state.period?.label || ''} · ${school.totalTeachers} incharges · ${school.enrollment.toLocaleString('en-GB')} students on roll`,
     actions: [
       el('button', { class: 'btn', onclick: () => app.navigate('reports') }, iconEl('print'), 'Generate report'),
       el('button', { class: 'btn btn-primary', onclick: () => app.navigate('entry') }, iconEl('checklist'), 'Enter today\u2019s checklist'),
@@ -54,7 +54,7 @@ export function renderDashboard(app) {
     }),
     kpi({
       label: 'Student attendance',
-      value: Math.round(school.studentAttendance) || '—',
+      value: school.withData ? Math.round(school.studentAttendance) || '—' : '—',
       unit: '%',
       tone: 'blue',
       iconName: 'users',
@@ -169,7 +169,7 @@ export function renderDashboard(app) {
       el('div', { class: 'kv' },
         el('dt', {}, 'Composite'), el('dd', {}, `${spotlight.composite}% (Grade ${spotlight.grade.grade})`),
         el('dt', {}, 'Student attendance'), el('dd', {}, `${Math.round(spotlight.studentAttendance)}%`),
-        el('dt', {}, 'Days monitored'), el('dd', {}, `${spotlight.daysObserved} of ${WORKING_DAYS.length}`),
+        el('dt', {}, 'Days monitored'), el('dd', {}, `${spotlight.daysObserved} of ${app.days.length}`),
         el('dt', {}, 'Strongest'), el('dd', {}, `${spotlight.strongest[0]?.item.en || '—'} (${Math.round(spotlight.strongest[0]?.percent || 0)}%)`),
       ),
       el('div', { class: 'mt14' },
